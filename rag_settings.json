@@ -1,0 +1,31 @@
+{
+  "model": {
+    "provider": "deepseek",
+    "model_name": "deepseek-v4-flash",
+    "base_url": "https://api.deepseek.com/v1",
+    "temperature": 0.3,
+    "top_p": 0.9,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+    "timeout": 120,
+    "max_retries": 5,
+    "max_tokens": 160000,
+    "api_key": "sdfg"
+  },
+  "rag": {
+    "retrieval_k": 50,
+    "search_type": "similarity",
+    "mmr_lambda": 0.5,
+    "score_threshold": 0.0,
+    "show_sources": true,
+    "multi_book_mode": false,
+    "k_per_book": 10,
+    "fusion_method": "rrf",
+    "rrf_k": 60,
+    "hybrid_search": false,
+    "hybrid_alpha": 0.5,
+    "rerank_enabled": true,
+    "rerank_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+    "rerank_top_k": 5
+  }
+}

@@ -1,0 +1,2567 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG — 文件問答</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8f9fc;
+      --surface: #ffffff;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --primary-light: #eef2ff;
+      --primary-glow: rgba(79, 70, 229, 0.15);
+      --border: #e2e4e9;
+      --text: #1a1d23;
+      --text-secondary: #6b7280;
+      --muted: #9ca3af;
+      --success: #10b981;
+      --success-bg: #ecfdf5;
+      --error: #ef4444;
+      --error-bg: #fef2f2;
+      --radius: 14px;
+      --radius-sm: 10px;
+      --radius-xs: 6px;
+      --shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.06);
+      --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.08);
+      --transition: 0.2s ease;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+      --sidebar-width: 320px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    .app {
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: var(--sidebar-width);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+
+    .sidebar-header {
+      padding: 20px 20px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .sidebar-header h1 {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      background: linear-gradient(135deg, var(--primary), #7c3aed);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .sidebar-header .settings-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 34px;
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--text-secondary);
+      transition: all var(--transition);
+    }
+
+    .sidebar-header .settings-btn:hover {
+      background: var(--bg);
+      color: var(--text);
+      border-color: var(--muted);
+    }
+
+    .sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 16px 16px;
+    }
+
+    .sidebar-content::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .sidebar-content::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-sm);
+      padding: 18px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: all var(--transition);
+      position: relative;
+      margin-bottom: 10px;
+    }
+
+    .dropzone:hover,
+    .dropzone.dragover {
+      border-color: var(--primary);
+      background: var(--primary-light);
+      box-shadow: 0 0 0 4px var(--primary-glow);
+    }
+
+    .dropzone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .dropzone-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      background: var(--primary-light);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      margin: 0 auto 6px;
+      transition: transform var(--transition);
+    }
+
+    .dropzone:hover .dropzone-icon {
+      transform: scale(1.08);
+    }
+
+    .dropzone p {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .dropzone p strong {
+      color: var(--primary);
+    }
+
+    .dropzone-hint {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    #fileChips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-bottom: 8px;
+    }
+
+    .file-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 3px 7px 3px 10px;
+      border-radius: 20px;
+      font-size: 0.74rem;
+      font-weight: 500;
+    }
+
+    .file-chip button {
+      background: none;
+      border: none;
+      color: var(--error);
+      cursor: pointer;
+      font-size: 0.85rem;
+      line-height: 1;
+      padding: 0 2px;
+      opacity: 0.6;
+      transition: opacity var(--transition);
+    }
+
+    .file-chip button:hover {
+      opacity: 1;
+    }
+
+    .upload-row .btn {
+      width: 100%;
+    }
+
+    .section-label {
+      font-size: 0.76rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      padding: 10px 4px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .section-label .action-link {
+      font-size: 0.72rem;
+      font-weight: 400;
+      text-transform: none;
+      letter-spacing: 0;
+      color: var(--text-secondary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .section-label .action-link:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .file-list {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .session-section {
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 10px;
+      padding-bottom: 8px;
+    }
+
+    .session-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .session-header .btn-new {
+      padding: 3px 8px;
+      font-size: 0.7rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+      color: var(--primary);
+      font-weight: 500;
+      font-family: inherit;
+      transition: all var(--transition);
+    }
+
+    .session-header .btn-new:hover {
+      background: var(--primary-light);
+      border-color: var(--primary);
+    }
+
+    .session-list {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+
+    .session-list::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .session-list::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .session-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 8px;
+      border-radius: var(--radius-xs);
+      cursor: pointer;
+      transition: all var(--transition);
+      border: 1px solid transparent;
+    }
+
+    .session-item:hover {
+      background: var(--bg);
+      border-color: var(--border);
+    }
+
+    .session-item.active {
+      background: var(--primary-light);
+      border-color: var(--primary);
+    }
+
+    .session-item .sess-icon {
+      font-size: 0.85rem;
+      flex-shrink: 0;
+    }
+
+    .session-item .sess-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .session-item .sess-name {
+      font-size: 0.78rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-item .sess-meta {
+      font-size: 0.64rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-item .sess-del {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      font-size: 0.85rem;
+      padding: 2px 4px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: all var(--transition);
+    }
+
+    .session-item:hover .sess-del {
+      opacity: 1;
+    }
+
+    .session-item .sess-del:hover {
+      color: var(--error);
+      background: var(--error-bg);
+    }
+
+    .session-empty {
+      text-align: center;
+      padding: 12px 0;
+      color: var(--muted);
+      font-size: 0.74rem;
+    }
+
+    .multi-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .multi-toggle input[type="checkbox"] {
+      accent-color: var(--primary);
+      width: 14px;
+      height: 14px;
+      cursor: pointer;
+    }
+
+    .book-checkbox {
+      accent-color: var(--primary);
+      width: 15px;
+      height: 15px;
+      cursor: pointer;
+      flex-shrink: 0;
+      display: none;
+    }
+
+    .book-checkbox.visible {
+      display: block;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      cursor: pointer;
+      transition: all var(--transition);
+      position: relative;
+    }
+
+    .file-item::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 5px;
+      bottom: 5px;
+      width: 3px;
+      border-radius: 3px;
+      background: transparent;
+      transition: background var(--transition);
+    }
+
+    .file-item:hover {
+      border-color: var(--primary);
+      background: #fafbff;
+    }
+
+    .file-item.active {
+      border-color: var(--primary);
+      background: var(--primary-light);
+    }
+
+    .file-item.active::before {
+      background: var(--primary);
+    }
+
+    .file-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      background: var(--bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.95rem;
+      flex-shrink: 0;
+    }
+
+    .file-item.active .file-icon {
+      background: var(--surface);
+    }
+
+    .file-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .file-name {
+      font-weight: 500;
+      font-size: 0.81rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-meta {
+      font-size: 0.68rem;
+      color: var(--text-secondary);
+      margin-top: 1px;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 3px;
+      flex-shrink: 0;
+      opacity: 0;
+      transition: opacity var(--transition);
+    }
+
+    .file-item:hover .file-actions,
+    .file-item.active .file-actions {
+      opacity: 1;
+    }
+
+    .file-empty {
+      text-align: center;
+      padding: 28px 0;
+      color: var(--muted);
+      font-size: 0.82rem;
+      line-height: 1.6;
+    }
+
+    .file-empty-icon {
+      font-size: 1.8rem;
+      margin-bottom: 4px;
+      opacity: 0.4;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 8px 14px;
+      border: none;
+      border-radius: var(--radius-xs);
+      font-size: 0.82rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      white-space: nowrap;
+      font-family: inherit;
+      line-height: 1;
+    }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--primary-hover);
+      box-shadow: 0 2px 8px var(--primary-glow);
+    }
+
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 0.74rem;
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+
+    .btn-sm:hover:not(:disabled) {
+      background: var(--bg);
+      color: var(--text);
+      border-color: var(--muted);
+    }
+
+    .btn-danger {
+      background: transparent;
+      color: var(--error);
+      border: 1px solid transparent;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: var(--error-bg);
+      border-color: #fecaca;
+    }
+
+    .alert {
+      padding: 7px 10px;
+      border-radius: var(--radius-xs);
+      font-size: 0.78rem;
+      margin-top: 6px;
+      display: none;
+    }
+
+    .alert.show {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .alert-success {
+      background: var(--success-bg);
+      color: #065f46;
+      border: 1px solid #b8e6d0;
+    }
+
+    .alert-error {
+      background: var(--error-bg);
+      color: #991b1b;
+      border: 1px solid #fecaca;
+    }
+
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+    }
+
+    .main-header {
+      padding: 16px 24px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .main-header-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .main-header h2 {
+      font-size: 1.05rem;
+      font-weight: 600;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .main-header h2 span {
+      font-weight: 400;
+      color: var(--text-secondary);
+      font-size: 0.88rem;
+    }
+
+    .main-header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .main-header-right .btn-sm {
+      font-size: 0.72rem;
+      padding: 3px 7px;
+    }
+
+    .prompt-toggle {
+      display: flex;
+      background: var(--bg);
+      border-radius: var(--radius-xs);
+      padding: 2px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+
+    .prompt-option {
+      padding: 5px 12px;
+      border: none;
+      background: transparent;
+      border-radius: 5px;
+      font-size: 0.76rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all var(--transition);
+      font-family: inherit;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .prompt-option:hover {
+      color: var(--text);
+    }
+
+    .prompt-option.active {
+      background: var(--surface);
+      color: var(--primary);
+      box-shadow: var(--shadow);
+    }
+
+    .chat-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px 24px;
+    }
+
+    .chat-area::-webkit-scrollbar {
+      width: 5px;
+    }
+
+    .chat-area::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .chat-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      text-align: center;
+      padding: 40px;
+    }
+
+    .chat-empty-icon {
+      font-size: 2.8rem;
+      margin-bottom: 10px;
+      opacity: 0.3;
+    }
+
+    .chat-empty h3 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 3px;
+    }
+
+    .chat-empty p {
+      font-size: 0.8rem;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+
+    .chat-msg {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      animation: msgIn 0.25s ease;
+    }
+
+    @keyframes msgIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .chat-msg.user {
+      flex-direction: row-reverse;
+    }
+
+    .chat-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .chat-msg.ai .chat-avatar {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+
+    .chat-msg.user .chat-avatar {
+      background: #e8e4ff;
+      color: #6d5ae0;
+    }
+
+    .chat-bubble-wrap {
+      max-width: 78%;
+      min-width: 0;
+    }
+
+    .chat-msg.user .chat-bubble-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+    }
+
+    .chat-meta {
+      font-size: 0.66rem;
+      color: var(--muted);
+      margin-bottom: 3px;
+      padding: 0 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .chat-meta .msg-time {
+      margin-left: auto;
+    }
+
+    .chat-bubble {
+      padding: 9px 13px;
+      border-radius: 14px;
+      font-size: 0.87rem;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .chat-bubble h1,
+    .chat-bubble h2,
+    .chat-bubble h3,
+    .chat-bubble h4 {
+      margin: 0.5em 0 0.25em;
+      line-height: 1.3;
+    }
+
+    .chat-bubble h1 {
+      font-size: 1.2rem;
+    }
+
+    .chat-bubble h2 {
+      font-size: 1.1rem;
+    }
+
+    .chat-bubble h3 {
+      font-size: 1rem;
+    }
+
+    .chat-bubble h4 {
+      font-size: 0.95rem;
+    }
+
+    .chat-bubble p {
+      margin: 0.3em 0;
+    }
+
+    .chat-bubble ul,
+    .chat-bubble ol {
+      padding-left: 1.4em;
+      margin: 0.3em 0;
+    }
+
+    .chat-bubble li {
+      margin: 0.15em 0;
+    }
+
+    .chat-bubble code {
+      background: #f0f0f0;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.82rem;
+      font-family: "SF Mono", "Fira Code", "Consolas", monospace;
+    }
+
+    .chat-bubble pre {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      padding: 10px 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin: 0.4em 0;
+      font-size: 0.8rem;
+      line-height: 1.5;
+    }
+
+    .chat-bubble pre code {
+      background: none;
+      padding: 0;
+      font-size: inherit;
+      color: inherit;
+    }
+
+    .chat-bubble blockquote {
+      border-left: 3px solid var(--primary);
+      padding-left: 10px;
+      margin: 0.4em 0;
+      color: var(--text-secondary);
+    }
+
+    .chat-bubble table {
+      border-collapse: collapse;
+      margin: 0.4em 0;
+      font-size: 0.82rem;
+    }
+
+    .chat-bubble th,
+    .chat-bubble td {
+      border: 1px solid var(--border);
+      padding: 4px 8px;
+      text-align: left;
+    }
+
+    .chat-bubble th {
+      background: var(--primary-light);
+      font-weight: 600;
+    }
+
+    .chat-bubble a {
+      color: var(--primary);
+      text-decoration: underline;
+    }
+
+    .chat-bubble hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 0.5em 0;
+    }
+
+    .chat-bubble img {
+      max-width: 100%;
+      border-radius: 6px;
+      margin: 0.4em 0;
+    }
+
+    .chat-msg.ai .chat-bubble {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 4px;
+      box-shadow: var(--shadow);
+    }
+
+    .chat-msg.user .chat-bubble {
+      background: var(--primary);
+      color: #fff;
+      border-bottom-right-radius: 4px;
+    }
+
+    .chat-bubble .sources-toggle {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 0.72rem;
+      color: var(--primary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+
+    .chat-bubble .sources-toggle:hover {
+      background: var(--primary-light);
+    }
+
+    .chat-bubble .sources-list {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background: var(--bg);
+      border-radius: 6px;
+      font-size: 0.74rem;
+      color: var(--text-secondary);
+      display: none;
+    }
+
+    .chat-bubble .sources-list.show {
+      display: block;
+    }
+
+    .chat-bubble .sources-list .source-item {
+      padding: 2px 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .chat-bubble .sources-list .source-item::before {
+      content: '#';
+      margin-right: 4px;
+      color: var(--primary);
+    }
+
+    .chat-footer {
+      padding: 12px 24px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+    }
+
+    .input-row textarea {
+      flex: 1;
+      padding: 9px 13px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 0.87rem;
+      resize: none;
+      font-family: inherit;
+      min-height: 42px;
+      max-height: 120px;
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      background: var(--bg);
+      line-height: 1.5;
+    }
+
+    .input-row textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+      background: var(--surface);
+    }
+
+    .send-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: var(--radius-sm);
+      border: none;
+      background: var(--primary);
+      color: #fff;
+      font-size: 1.05rem;
+      cursor: pointer;
+      transition: all var(--transition);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+
+    .send-btn:hover:not(:disabled) {
+      background: var(--primary-hover);
+      box-shadow: 0 2px 8px var(--primary-glow);
+      transform: scale(1.03);
+    }
+
+    .send-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+    }
+
+    .spinner-light {
+      border-color: rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .no-select {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--muted);
+      font-size: 0.88rem;
+      text-align: center;
+      padding: 40px;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      animation: fadeIn 0.15s ease;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+      }
+
+      to {
+        opacity: 1;
+      }
+    }
+
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      width: 90%;
+      max-width: 480px;
+      max-height: 85vh;
+      overflow-y: auto;
+      animation: slideUp 0.2s ease;
+    }
+
+    @keyframes slideUp {
+      from {
+        transform: translateY(16px);
+        opacity: 0;
+      }
+
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 20px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .modal-header h3 {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.3rem;
+      cursor: pointer;
+      color: var(--muted);
+      line-height: 1;
+      padding: 4px;
+      border-radius: 4px;
+    }
+
+    .modal-close:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .modal-body {
+      padding: 16px 20px 20px;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .form-select,
+    .form-input {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xs);
+      font-size: 0.85rem;
+      font-family: inherit;
+      background: var(--bg);
+      outline: none;
+      transition: border-color var(--transition);
+    }
+
+    .form-select:focus,
+    .form-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-glow);
+      background: var(--surface);
+    }
+
+    .form-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    .form-row .form-group {
+      flex: 1;
+    }
+
+    .form-hint {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      margin-top: 6px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 0.66rem;
+      font-weight: 500;
+    }
+
+    .tag-success {
+      background: var(--success-bg);
+      color: #065f46;
+    }
+
+    .param-toggle {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-family: inherit;
+      transition: background var(--transition);
+    }
+
+    .param-toggle:hover {
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .param-toggle .arrow {
+      transition: transform var(--transition);
+      font-size: 0.6rem;
+    }
+
+    .param-toggle .arrow.open {
+      transform: rotate(90deg);
+    }
+
+    .param-bar {
+      display: flex;
+      gap: 8px;
+      padding: 6px 0 2px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .param-bar.hidden {
+      display: none;
+    }
+
+    .param-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .param-group label {
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+
+    .param-group input,
+    .param-group select {
+      width: 56px;
+      padding: 3px 5px;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      font-size: 0.75rem;
+      font-family: inherit;
+      background: var(--bg);
+      outline: none;
+      transition: border-color var(--transition);
+    }
+
+    .param-group input:focus,
+    .param-group select:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    .param-group input[type="number"] {
+      width: 52px;
+    }
+
+    .tag-success {
+      background: var(--success-bg);
+      color: #065f46;
+    }
+
+    @media (max-width: 720px) {
+      .app {
+        flex-direction: column;
+        height: auto;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        width: 100%;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .main-header {
+        padding: 12px 14px;
+      }
+
+      .main-header-right .btn-sm {
+        font-size: 0.68rem;
+        padding: 2px 5px;
+      }
+
+      .chat-area {
+        padding: 12px 14px;
+        min-height: 250px;
+      }
+
+      .chat-footer {
+        padding: 10px 14px 14px;
+      }
+
+      .chat-bubble-wrap {
+        max-width: 92%;
+      }
+
+      .prompt-toggle {
+        width: 100%;
+      }
+
+      .prompt-option {
+        flex: 1;
+        text-align: center;
+      }
+
+      .modal {
+        width: 95%;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="app" id="app">
+
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>RAG 文件問答</h1>
+        <button class="settings-btn" onclick="openSettings()" title="設定">⚙️</button>
+      </div>
+      <div class="sidebar-content" id="sidebarContent">
+        <div class="session-section">
+          <div class="session-header">
+            <div
+              style="font-size:0.76rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted)">
+              💬 對話</div>
+            <button class="btn-new" onclick="createSession()">+ 新增</button>
+          </div>
+          <div class="session-list" id="sessionList">
+            <div class="session-empty">還沒有對話，點擊「+ 新增」建立</div>
+          </div>
+        </div>
+
+        <div class="dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept=".pdf,.txt,.md,.csv,.tsv,.json,.html,.htm,.xhtml,.docx,.pptx,.epub,.rtf,.py,.js,.ts,.jsx,.tsx,.yaml,.yml,.xml,.log,.tex,.rst,.css,.scss,.less,.sql,.sh,.bat,.ps1,.toml,.ini,.cfg,.conf,.svg" />
+          <div class="dropzone-icon">📤</div>
+          <p>拖曳檔案到此處，或 <strong>瀏覽</strong></p>
+          <p class="dropzone-hint">支援 PDF、TXT、MD、CSV、JSON、HTML、DOCX、PPTX、EPUB、RTF 等多種格式</p>
+        </div>
+        <div id="fileChips"></div>
+        <div id="uploadAlert" class="alert"></div>
+        <div class="upload-row">
+          <button class="btn btn-primary" id="uploadBtn" onclick="uploadFile()">
+            ⬆️ 上傳並索引
+          </button>
+        </div>
+        <button class="param-toggle" id="chunkToggle" onclick="toggleChunkParams()" type="button">
+          <span class="arrow">▶</span> 分塊參數
+        </button>
+        <div class="param-bar hidden" id="chunkParams">
+          <div class="param-group">
+            <label>塊大小</label>
+            <input type="number" id="chunkSize" value="500" min="100" step="50" />
+          </div>
+          <div class="param-group">
+            <label>重疊</label>
+            <input type="number" id="chunkOverlap" value="50" min="0" step="10" />
+          </div>
+        </div>
+
+        <div class="section-label" style="margin-top:4px">
+          <label class="multi-toggle" id="multiToggleLabel">
+            <input type="checkbox" id="multiModeToggle" onchange="onMultiModeToggle()" />
+            多檔案模式
+          </label>
+        </div>
+        <div id="multiBar" style="display:none;margin-bottom:6px">
+          <button class="btn btn-primary" id="askMultiBtn" onclick="askSelectedBooks()" disabled
+            style="width:100%;font-size:0.78rem">
+            🤖 詢問選取檔案 (0)
+          </button>
+        </div>
+
+        <div class="section-label">
+          📁 檔案列表
+          <button class="action-link" onclick="refreshBooks()">⟳ 重新整理</button>
+        </div>
+        <div class="file-list" id="fileList">
+          <div class="file-empty" id="fileEmpty">
+            <div class="file-empty-icon">📂</div>
+            <div>還沒有匯入任何檔案</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="main-header">
+        <div class="main-header-left">
+          <h2 id="mainTitle">💬 問答 <span id="chatFileLabel"></span></h2>
+        </div>
+        <div class="main-header-right" id="chatActions" style="display:none">
+          <button class="btn-sm" onclick="exportHistory()" title="匯出聊天記錄">📥 匯出</button>
+          <button class="btn-danger btn-sm" onclick="clearHistory()" title="清空聊天記錄">🗑️ 清空</button>
+        </div>
+        <div class="prompt-toggle" id="promptToggle">
+          <button class="prompt-option active" data-value="book_qa" onclick="setPrompt('book_qa')">📖 書籍</button>
+          <button class="prompt-option" data-value="general_qa" onclick="setPrompt('general_qa')">📄 通用</button>
+          <button class="prompt-option" data-value="multi_book_qa" onclick="setPrompt('multi_book_qa')">📚 多書</button>
+        </div>
+      </div>
+
+      <div class="chat-area" id="chatArea">
+        <div class="chat-empty" id="noSelection">
+          <div class="chat-empty-icon">💬</div>
+          <h3>選擇一個檔案開始提問</h3>
+          <p>從左側清單選擇一個已上傳的檔案，或上傳新檔案</p>
+        </div>
+      </div>
+
+      <div class="chat-footer">
+        <button class="param-toggle" id="paramToggle" onclick="toggleChatParams()" type="button">
+          <span class="arrow">▶</span> 對話參數
+        </button>
+        <div class="param-bar hidden" id="chatParams">
+          <div class="param-group">
+            <label>溫度</label>
+            <input type="number" id="chatTemperature" value="0.5" min="0" max="2" step="0.1" />
+          </div>
+          <div class="param-group">
+            <label>Top-p</label>
+            <input type="number" id="chatTopP" value="0.95" min="0" max="1" step="0.05" />
+          </div>
+          <div class="param-group">
+            <label>K</label>
+            <input type="number" id="chatRetrievalK" value="20" min="1" max="50" step="1" />
+          </div>
+          <div class="param-group">
+            <label>模式</label>
+            <select id="chatMode" onchange="onChatModeChange()"
+              style="padding:4px 8px;border-radius:var(--radius-xs);border:1px solid var(--border);font-size:0.8rem;width:100%;background:var(--bg);outline:none;transition:border-color var(--transition)">
+              <option value="rag">🔍 RAG 檢索</option>
+              <option value="full">📄 全文</option>
+            </select>
+          </div>
+        </div>
+        <div class="input-row">
+          <textarea id="chatInput" rows="1" placeholder="輸入你的問題…"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();multiMode && selectedBooks.size > 0 ? askSelectedBooks() : sendChat()}"></textarea>
+          <button class="send-btn" id="sendBtn"
+            onclick="multiMode && selectedBooks.size > 0 ? askSelectedBooks() : sendChat()" title="发送">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
+              stroke-linecap="round" stroke-linejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settingsOverlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>⚙️ 設定</h3>
+        <button class="modal-close" onclick="closeSettings()">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">AI 提供商</label>
+          <select class="form-select" id="settingProvider" onchange="onProviderChange()"></select>
+        </div>
+        <div class="form-group" id="settingBaseUrlGroup" style="display:none">
+          <label class="form-label">API 位址</label>
+          <input class="form-input" id="settingBaseUrl" placeholder="https://api.openai.com/v1" />
+        </div>
+        <div class="form-group" id="settingDeepseekModelGroup" style="display:none">
+          <label class="form-label">DeepSeek 模型</label>
+          <select class="form-select" id="settingDeepseekModel">
+            <option value="deepseek-chat">deepseek-chat (通用對話)</option>
+            <option value="deepseek-reasoner">deepseek-reasoner (推理增強)</option>
+            <option value="deepseek-v4-flash">deepseek-v4-flash (快速)</option>
+            <option value="deepseek-v4-pro">deepseek-v4-pro (專業推理)</option>
+          </select>
+          <div class="form-hint">chat/v4-flash 適合通用問答；reasoner/v4-pro 適合複雜推理與分析</div>
+        </div>
+        <div class="form-group" id="settingModelGroup">
+          <label class="form-label">模型</label>
+          <input class="form-input" id="settingModel" placeholder="例如: gpt-4o-mini" />
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">温度 (temperature)</label>
+            <input class="form-input" id="settingTemperature" type="number" step="0.1" min="0" max="2"
+              placeholder="0.7" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Top-p</label>
+            <input class="form-input" id="settingTopP" type="number" step="0.05" min="0" max="1" placeholder="0.9" />
+          </div>
+        </div>
+        <div class="section-label" style="margin-top:4px;padding-top:10px;border-top:1px solid var(--border)">🔍 RAG
+          檢索設定</div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">檢索數量 (k)</label>
+            <input class="form-input" id="settingRetrievalK" type="number" min="1" max="100" step="1"
+              placeholder="20" />
+            <div class="form-hint">單檔案模式下檢索的 chunk 數量</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">每檔案檢索 (k)</label>
+            <input class="form-input" id="settingKPerBook" type="number" min="1" max="50" step="1" placeholder="10" />
+            <div class="form-hint">多檔案模式下每個檔案的檢索數量</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">檢索策略 (search_type)</label>
+          <select class="form-select" id="settingSearchType" onchange="onSearchTypeChange()">
+            <option value="similarity">similarity — 相似度檢索</option>
+            <option value="mmr">mmr — 最大邊際相關性 (多樣性)</option>
+          </select>
+          <div class="form-hint">similarity 回傳最相關的；mmr 在相關性與多樣性之間平衡</div>
+        </div>
+        <div class="form-group" id="settingMmrLambdaGroup" style="display:none">
+          <label class="form-label">MMR Lambda (多樣性權重)</label>
+          <input class="form-input" id="settingMmrLambda" type="number" step="0.05" min="0" max="1" placeholder="0.5" />
+          <div class="form-hint">0 = 最大多樣性，1 = 最大相關性</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">融合方式 (多檔案)</label>
+          <select class="form-select" id="settingFusionMethod">
+            <option value="rrf">RRF (排序融合)</option>
+            <option value="score">分數融合</option>
+            <option value="rerank">重排序</option>
+          </select>
+          <div class="form-hint">多檔案查詢時如何合併各檔案的檢索結果</div>
+        </div>
+        <div id="settingsAlert" class="alert"></div>
+        <div class="form-actions">
+          <button class="btn btn-sm" onclick="closeSettings()">取消</button>
+          <button class="btn btn-primary" onclick="saveSettings()">💾 儲存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API = "";
+
+    let currentFile = "";
+    let currentPromptType = "book_qa";
+    let chatHistory = [];
+    let filesCache = [];
+    let activeBookId = "";
+    let chatting = false;
+    let settings = {};
+    let multiMode = false;
+    let selectedBooks = new Set();
+    let currentMultiHistoryLabel = "";
+
+    // Session state
+    let currentSessionId = "";
+    let sessionsCache = [];
+
+    // ── File upload UI ──
+
+    document.getElementById("fileInput").addEventListener("change", () => showFileChip());
+    document.getElementById("dropzone").addEventListener("dragover", (e) => {
+      e.preventDefault();
+      document.getElementById("dropzone").classList.add("dragover");
+    });
+    document.getElementById("dropzone").addEventListener("dragleave", () => {
+      document.getElementById("dropzone").classList.remove("dragover");
+    });
+    document.getElementById("dropzone").addEventListener("drop", (e) => {
+      e.preventDefault();
+      document.getElementById("dropzone").classList.remove("dragover");
+      const files = e.dataTransfer.files;
+      if (files.length) {
+        document.getElementById("fileInput").files = files;
+        showFileChip();
+      }
+    });
+
+    function showFileChip() {
+      const input = document.getElementById("fileInput");
+      const chips = document.getElementById("fileChips");
+      chips.innerHTML = "";
+      if (input.files.length === 0) return;
+      Array.from(input.files).forEach((f, i) => {
+        const chip = document.createElement("span");
+        chip.className = "file-chip";
+        chip.innerHTML = `📄 ${f.name} <button onclick="removeFile(${i})">×</button>`;
+        chips.appendChild(chip);
+      });
+    }
+
+    function removeFile(idx) {
+      const input = document.getElementById("fileInput");
+      const dt = new DataTransfer();
+      Array.from(input.files).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+      input.files = dt.files;
+      showFileChip();
+    }
+
+    function setPrompt(val) {
+      currentPromptType = val;
+      document.querySelectorAll(".prompt-option").forEach(el => {
+        el.classList.toggle("active", el.dataset.value === val);
+      });
+    }
+
+    // ── Param toggles ──
+
+    function onChatModeChange() {
+      const mode = document.getElementById("chatMode").value;
+      const kGroup = document.getElementById("chatRetrievalK").closest(".param-group");
+      kGroup.style.display = mode === "full" ? "none" : "";
+    }
+
+    function toggleChunkParams() {
+      const bar = document.getElementById("chunkParams");
+      const arrow = document.querySelector("#chunkToggle .arrow");
+      bar.classList.toggle("hidden");
+      arrow.classList.toggle("open");
+    }
+
+    function toggleChatParams() {
+      const bar = document.getElementById("chatParams");
+      const arrow = document.querySelector("#paramToggle .arrow");
+      bar.classList.toggle("hidden");
+      arrow.classList.toggle("open");
+    }
+
+    // ── Upload ──
+
+    async function uploadFile() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      if (!file) return showAlert("uploadAlert", "請先選擇檔案", "error");
+
+      const btn = document.getElementById("uploadBtn");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> 索引中...';
+      hideAlert("uploadAlert");
+
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const chunkBar = document.getElementById("chunkParams");
+      if (!chunkBar.classList.contains("hidden")) {
+        const cs = document.getElementById("chunkSize").value;
+        const co = document.getElementById("chunkOverlap").value;
+        if (cs) fd.append("chunk_size", cs);
+        if (co) fd.append("chunk_overlap", co);
+      }
+
+      try {
+        const r = await fetch(`${API}/api/upload`, { method: "POST", body: fd });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "上傳失敗");
+
+        showAlert("uploadAlert", `✅ 索引完成！共 ${d.chunk_count} 個片段`, "success");
+        fileInput.value = "";
+        document.getElementById("fileChips").innerHTML = "";
+        await loadFiles();
+        selectFile(d.book_name);
+      } catch (e) {
+        showAlert("uploadAlert", `❌ ${e.message}`, "error");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = "⬆️ 上傳並索引";
+      }
+    }
+
+    // ── File type helpers ──
+
+    const FILE_TYPE_INFO = {
+      ".pdf": { icon: "📕", label: "PDF" },
+      ".txt": { icon: "📄", label: "TXT" },
+      ".md": { icon: "📝", label: "MD" },
+      ".rst": { icon: "📄", label: "RST" },
+      ".text": { icon: "📄", label: "TEXT" },
+      ".log": { icon: "📄", label: "LOG" },
+      ".csv": { icon: "📊", label: "CSV" },
+      ".tsv": { icon: "📊", label: "TSV" },
+      ".json": { icon: "📋", label: "JSON" },
+      ".html": { icon: "🌐", label: "HTML" },
+      ".htm": { icon: "🌐", label: "HTML" },
+      ".xhtml": { icon: "🌐", label: "XHTML" },
+      ".docx": { icon: "📝", label: "DOCX" },
+      ".pptx": { icon: "📑", label: "PPTX" },
+      ".epub": { icon: "📖", label: "EPUB" },
+      ".rtf": { icon: "📃", label: "RTF" },
+      ".py": { icon: "🐍", label: "PY" },
+      ".js": { icon: "🟨", label: "JS" },
+      ".ts": { icon: "🔷", label: "TS" },
+      ".jsx": { icon: "⚛️", label: "JSX" },
+      ".tsx": { icon: "⚛️", label: "TSX" },
+      ".css": { icon: "🎨", label: "CSS" },
+      ".scss": { icon: "🎨", label: "SCSS" },
+      ".less": { icon: "🎨", label: "LESS" },
+      ".sql": { icon: "🗄️", label: "SQL" },
+      ".sh": { icon: "💻", label: "SH" },
+      ".bat": { icon: "💻", label: "BAT" },
+      ".ps1": { icon: "💻", label: "PS1" },
+      ".yaml": { icon: "⚙️", label: "YAML" },
+      ".yml": { icon: "⚙️", label: "YAML" },
+      ".toml": { icon: "⚙️", label: "TOML" },
+      ".xml": { icon: "📐", label: "XML" },
+      ".svg": { icon: "🖼️", label: "SVG" },
+      ".tex": { icon: "📐", label: "TEX" },
+      ".ini": { icon: "⚙️", label: "INI" },
+      ".cfg": { icon: "⚙️", label: "CFG" },
+      ".conf": { icon: "⚙️", label: "CONF" },
+    };
+
+    function getFileTypeInfo(fileType) {
+      return FILE_TYPE_INFO[fileType] || { icon: "📄", label: (fileType || "").replace(".", "").toUpperCase() || "FILE" };
+    }
+
+    // ── Books ──
+
+    async function loadFiles() {
+      try {
+        const r = await fetch(`${API}/api/books`);
+        const d = await r.json();
+        filesCache = d.books || [];
+        const list = document.getElementById("fileList");
+        const empty = document.getElementById("fileEmpty");
+
+        list.innerHTML = "";
+
+        if (!d.books || d.books.length === 0) {
+          list.appendChild(empty);
+          const ns = document.getElementById("noSelection");
+          if (ns) ns.style.display = "";
+          document.getElementById("chatActions").style.display = "none";
+          currentFile = "";
+          chatHistory = [];
+          renderChat();
+          updateChatHeader();
+          return;
+        }
+
+        d.books.forEach((b) => {
+          const item = document.createElement("div");
+          item.className = "file-item";
+          if (b.name === currentFile) item.classList.add("active");
+          item.dataset.name = b.name;
+
+          const ts = b.created_at ? b.created_at * 1000 : 0;
+          const dateStr = ts ? new Date(ts).toLocaleDateString("zh-CN") : "";
+          const ftInfo = getFileTypeInfo(b.file_type);
+          const icon = ftInfo.icon;
+          const tag = ftInfo.label;
+          const exchanges = b.history_exchanges != null ? ` · ${b.history_exchanges} 條對話` : "";
+          const isChecked = selectedBooks.has(b.name);
+
+          // Build elements via DOM to avoid HTML injection issues
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.className = "book-checkbox" + (multiMode ? " visible" : "");
+          cb.dataset.name = b.name;
+          cb.checked = isChecked;
+          cb.addEventListener("change", function (e) {
+            e.stopPropagation();
+            onBookCheckChange(b.name, this.checked);
+          });
+          item.appendChild(cb);
+
+          const iconDiv = document.createElement("div");
+          iconDiv.className = "file-icon";
+          iconDiv.textContent = icon;
+          item.appendChild(iconDiv);
+
+          const infoDiv = document.createElement("div");
+          infoDiv.className = "file-info";
+          infoDiv.addEventListener("click", function () {
+            if (!multiMode) selectFile(b.name);
+          });
+          const nameDiv = document.createElement("div");
+          nameDiv.className = "file-name";
+          nameDiv.textContent = b.name;
+          infoDiv.appendChild(nameDiv);
+          const metaDiv = document.createElement("div");
+          metaDiv.className = "file-meta";
+          const sizeStr = b.size_kb ? (b.size_kb >= 1024 ? (b.size_kb / 1024).toFixed(1) + " MB" : b.size_kb + " KB") : "0 KB";
+          metaDiv.textContent = `${b.chunk_count || 0} 片段 · ${sizeStr} · ${tag}${dateStr ? " · " + dateStr : ""}${exchanges}`;
+          infoDiv.appendChild(metaDiv);
+          item.appendChild(infoDiv);
+
+          const actionsDiv = document.createElement("div");
+          actionsDiv.className = "file-actions";
+          const chatBtn = document.createElement("button");
+          chatBtn.className = "btn btn-sm";
+          chatBtn.textContent = "💬";
+          chatBtn.title = "選擇";
+          chatBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            selectFile(b.name);
+          });
+          actionsDiv.appendChild(chatBtn);
+          const delBtn = document.createElement("button");
+          delBtn.className = "btn btn-danger btn-sm";
+          delBtn.textContent = "🗑️";
+          delBtn.title = "刪除";
+          delBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            deleteFile(b.name);
+          });
+          actionsDiv.appendChild(delBtn);
+          item.appendChild(actionsDiv);
+
+          if (multiMode) {
+            item.addEventListener("click", function (e) {
+              if (e.target.tagName !== "INPUT" && e.target.tagName !== "BUTTON") {
+                const checkbox = this.querySelector(".book-checkbox");
+                if (checkbox) { checkbox.checked = !checkbox.checked; onBookCheckChange(b.name, checkbox.checked); }
+              }
+            });
+          }
+          list.appendChild(item);
+        });
+
+        if (currentFile && d.books.some(b => b.name === currentFile)) {
+          updateChatHeader();
+        } else if (d.current && d.books.some(b => b.name === d.current)) {
+          selectFile(d.current);
+        } else if (d.books.length > 0) {
+          selectFile(d.books[0].name);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // 2. 完善 selectFile 的异常捕获与提示
+    async function selectFile(name) {
+      if (!name) return;
+
+      // In session mode: just update selected book, don't switch history
+      if (currentSessionId) {
+        currentFile = name;
+        selectedBooks.add(name);
+        updateAskMultiBtn();
+        updateChatHeader();
+        document.querySelectorAll(".file-item").forEach((el) => {
+          el.classList.toggle("active", el.dataset.name === name);
+        });
+        // Update session's active_book
+        try {
+          await fetch(`${API}/api/sessions/${currentSessionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ active_book: name, selected_books: Array.from(selectedBooks) }),
+          });
+          await loadSessions();
+        } catch (e) { console.error(e); }
+        return;
+      }
+
+      // Legacy mode: direct book-based chat
+      try {
+        const r = await fetch(`${API}/api/set_active_book`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ book_name: name }),
+        });
+
+        const d = await r.json();
+
+        if (!r.ok) {
+          throw new Error(d.detail || "切換書籍失敗");
+        }
+
+        if (d.success) {
+          currentFile = name;
+          chatHistory = (d.history || []).map(msg => ({
+            role: msg.role === "assistant" ? "ai" : msg.role,
+            text: msg.content,
+            timestamp: msg.timestamp,
+            metadata: msg.metadata || null,
+          }));
+          const ns = document.getElementById("noSelection");
+          if (ns) ns.style.display = "none";
+          document.getElementById("chatActions").style.display = chatHistory.length ? "" : "none";
+          renderChat();
+          updateChatHeader();
+          document.querySelectorAll(".file-item").forEach((el) => {
+            el.classList.toggle("active", el.dataset.name === name);
+          });
+        }
+      } catch (e) {
+        console.error(e);
+        showAlert("uploadAlert", `❌ 無法切換書籍: ${e.message}`, "error");
+      }
+    }
+
+    function refreshBooks() {
+      loadFiles();
+    }
+
+    // ── Sessions ──
+
+    async function loadSessions() {
+      try {
+        const r = await fetch(`${API}/api/sessions`);
+        const d = await r.json();
+        sessionsCache = d.sessions || [];
+        renderSessions();
+      } catch (e) {
+        console.error("Failed to load sessions", e);
+      }
+    }
+
+    function renderSessions() {
+      const list = document.getElementById("sessionList");
+      if (sessionsCache.length === 0) {
+        list.innerHTML = '<div class="session-empty">還沒有對話，點擊「+ 新增」建立</div>';
+        return;
+      }
+      list.innerHTML = sessionsCache.map(s => {
+        const books = (s.selected_books || []).length;
+        const icon = s.id === currentSessionId ? '💬' : '🗨️';
+        const booksStr = books > 0 ? `${books} 本书` : "未选书";
+        const msgs = s.message_count || 0;
+        return `
+          <div class="session-item ${s.id === currentSessionId ? 'active' : ''}" onclick="selectSession('${s.id}')">
+            <span class="sess-icon">${icon}</span>
+            <div class="sess-info">
+              <div class="sess-name">${escapeHtml(s.name)}</div>
+              <div class="sess-meta">${booksStr} · ${msgs} 条消息</div>
+            </div>
+            <button class="sess-del" onclick="event.stopPropagation();deleteSessionUI('${s.id}')" title="删除">✕</button>
+          </div>
+        `;
+      }).join("");
+    }
+
+    async function createSession() {
+      const name = prompt("请输入对话名称：", `对话 ${new Date().toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}`);
+      if (!name || !name.trim()) return;
+      try {
+        const r = await fetch(`${API}/api/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: name.trim() }),
+        });
+        const d = await r.json();
+        if (!d.success) throw new Error(d.detail || "创建失败");
+        await loadSessions();
+        await selectSession(d.session.id);
+      } catch (e) {
+        showAlert("uploadAlert", `❌ 创建对话失败: ${e.message}`, "error");
+      }
+    }
+
+    async function selectSession(sessionId) {
+      if (!sessionId) return;
+      try {
+        const r = await fetch(`${API}/api/sessions/${sessionId}`);
+        const d = await r.json();
+        if (!d.success) throw new Error(d.detail || "加载对话失败");
+
+        currentSessionId = d.session.id;
+        chatHistory = (d.messages || []).map(m => ({
+          role: m.role === "assistant" ? "ai" : m.role,
+          text: m.content,
+          timestamp: m.timestamp,
+          metadata: m.metadata || null,
+          sources: m.metadata?.sources ? m.metadata.sources.map(s => typeof s === "string" ? s : s.content_preview || s) : null,
+          retrieved_chunks: m.metadata?.chunks || 0,
+        }));
+        selectedBooks = new Set(d.session.selected_books || []);
+        currentFile = d.session.active_book || (d.session.selected_books || [])[0] || "";
+
+        // Sync multi-mode with session
+        multiMode = selectedBooks.size > 1;
+        const multiToggle = document.getElementById("multiModeToggle");
+        if (multiToggle) multiToggle.checked = multiMode;
+        document.getElementById("multiBar").style.display = multiMode ? "block" : "none";
+        document.querySelectorAll(".book-checkbox").forEach(cb => {
+          cb.classList.toggle("visible", multiMode);
+          cb.checked = selectedBooks.has(cb.dataset.name);
+        });
+        updateAskMultiBtn();
+
+        const ns = document.getElementById("noSelection");
+        if (ns) ns.style.display = "none";
+        document.getElementById("chatActions").style.display = chatHistory.length ? "" : "none";
+
+        renderSessions();
+        renderChat();
+        updateChatHeader();
+        await loadFiles(); // refresh file list to show selection states
+      } catch (e) {
+        console.error(e);
+        showAlert("uploadAlert", `❌ ${e.message}`, "error");
+      }
+    }
+
+    async function deleteSessionUI(sessionId) {
+      if (!confirm("确定要删除这个对话吗？聊天记录将永久丢失。")) return;
+      try {
+        const r = await fetch(`${API}/api/sessions/${sessionId}`, { method: "DELETE" });
+        const d = await r.json();
+        if (!d.success) throw new Error(d.detail || "删除失败");
+        if (currentSessionId === sessionId) {
+          currentSessionId = "";
+          chatHistory = [];
+          currentFile = "";
+          selectedBooks.clear();
+          const ns = document.getElementById("noSelection");
+          if (ns) ns.style.display = "";
+          document.getElementById("chatActions").style.display = "none";
+          document.getElementById("chatFileLabel").textContent = "";
+          renderChat();
+          updateChatHeader();
+        }
+        await loadSessions();
+        await loadFiles();
+      } catch (e) {
+        showAlert("uploadAlert", `❌ ${e.message}`, "error");
+      }
+    }
+
+    async function syncSessionBooks() {
+      if (!currentSessionId) return;
+      try {
+        const books = Array.from(selectedBooks);
+        await fetch(`${API}/api/sessions/${currentSessionId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selected_books: books, active_book: books[0] || null }),
+        });
+        await loadSessions();
+      } catch (e) {
+        console.error("Failed to sync session books", e);
+      }
+    }
+
+    function updateChatHeader() {
+      const label = document.getElementById("chatFileLabel");
+      if (currentSessionId) {
+        const session = sessionsCache.find(s => s.id === currentSessionId);
+        const name = session ? session.name : "对话";
+        if (multiMode && selectedBooks.size > 0) {
+          const names = Array.from(selectedBooks);
+          label.textContent = `· ${name} [${names.length > 2 ? names.slice(0, 2).join(", ") + "…" : names.join(", ")}]`;
+        } else if (currentFile) {
+          label.textContent = `· ${name} (${currentFile})`;
+        } else {
+          label.textContent = `· ${name}`;
+        }
+      } else if (multiMode && selectedBooks.size > 0) {
+        const names = Array.from(selectedBooks);
+        label.textContent = `· [多文件] ${names.length > 2 ? names.slice(0, 2).join(", ") + "…" : names.join(", ")}`;
+      } else {
+        label.textContent = currentFile ? `· ${currentFile}` : "";
+      }
+    }
+
+    function onMultiModeToggle() {
+      const toggle = document.getElementById("multiModeToggle");
+      multiMode = toggle.checked;
+      const bar = document.getElementById("multiBar");
+      bar.style.display = multiMode ? "block" : "none";
+
+      if (!multiMode && !currentSessionId) {
+        selectedBooks.clear();
+      }
+      updateAskMultiBtn();
+      updateChatHeader();
+      loadFiles(); // rebuild file list with correct event handlers
+    }
+
+    function onBookCheckChange(name, checked) {
+      if (checked) {
+        selectedBooks.add(name);
+      } else {
+        selectedBooks.delete(name);
+      }
+      if (currentSessionId && !multiMode && checked) {
+        currentFile = name;
+      }
+      updateAskMultiBtn();
+      updateChatHeader();
+      syncSessionBooks();
+    }
+
+    function updateAskMultiBtn() {
+      const btn = document.getElementById("askMultiBtn");
+      const count = selectedBooks.size;
+      btn.disabled = count === 0;
+      btn.innerHTML = `🤖 询问选中文件 (${count})`;
+    }
+
+    async function askSelectedBooks() {
+      if (selectedBooks.size === 0) return;
+      const input = document.getElementById("chatInput");
+      const question = input.value.trim();
+      if (!question) {
+        input.focus();
+        return;
+      }
+      currentMultiHistoryLabel = Array.from(selectedBooks).join("+");
+      await sendChatMulti(Array.from(selectedBooks), question);
+    }
+
+    async function deleteFile(name) {
+      if (!confirm(`确定要删除「${name}」吗？此操作不可恢复。`)) return;
+      try {
+        const r = await fetch(`${API}/api/books/${encodeURIComponent(name)}`, { method: "DELETE" });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "删除失败");
+        if (currentFile === name) {
+          currentFile = "";
+          chatHistory = [];
+          const ns = document.getElementById("noSelection");
+          if (ns) ns.style.display = "";
+          document.getElementById("chatActions").style.display = "none";
+          document.getElementById("chatFileLabel").textContent = "";
+          renderChat();
+        }
+        selectedBooks.delete(name);
+        updateAskMultiBtn();
+        if (currentSessionId) syncSessionBooks();
+        await loadFiles();
+      } catch (e) {
+        showAlert("uploadAlert", `❌ 删除失败：${e.message}`, "error");
+      }
+    }
+
+    // ── Chat (blocking) ──
+
+    async function sendChat() {
+      const input = document.getElementById("chatInput");
+      const question = input.value.trim();
+      if (!question) return;
+      if (!currentFile && !currentSessionId) return showAlert("uploadAlert", "请先选择文件或对话", "error");
+
+      const noSelectionEl = document.getElementById("noSelection");
+      if (noSelectionEl) noSelectionEl.style.display = "none";
+
+      document.getElementById("chatActions").style.display = "";
+      input.value = "";
+
+      addMessage("user", question);
+      const aiIdx = addMessage("ai", '<span class="spinner"></span> 思考中...');
+
+      const btn = document.getElementById("sendBtn");
+      btn.disabled = true;
+      chatting = true;
+
+      try {
+        const params = new URLSearchParams({
+          question,
+          prompt_type: currentPromptType,
+        });
+
+        if (currentSessionId) {
+          params.append("session_id", currentSessionId);
+        }
+        if (currentFile) {
+          params.append("book_name", currentFile);
+        }
+
+        const temp = document.getElementById("chatTemperature").value;
+        const topP = document.getElementById("chatTopP").value;
+        const k = document.getElementById("chatRetrievalK").value;
+        const mode = document.getElementById("chatMode").value;
+        if (temp) params.append("temperature", temp);
+        if (topP) params.append("top_p", topP);
+        if (k && mode === "rag") params.append("retrieval_k", k);
+        params.append("mode", mode);
+
+        const r = await fetch(`${API}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params,
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "请求失败");
+
+        chatHistory[aiIdx].text = d.response;
+        chatHistory[aiIdx].sources = d.sources || null;
+        chatHistory[aiIdx].retrieved_chunks = d.retrieved_chunks || 0;
+        renderChat();
+        if (currentSessionId) loadSessions(); // update session meta
+      } catch (e) {
+        chatHistory[aiIdx].text = `❌ ${e.message}`;
+        renderChat();
+      } finally {
+        btn.disabled = false;
+        chatting = false;
+      }
+    }
+
+    // ── Multi-book chat ──
+
+    async function sendChatMulti(bookNames, question) {
+      const noSelectionEl = document.getElementById("noSelection");
+      if (noSelectionEl) noSelectionEl.style.display = "none";
+      document.getElementById("chatActions").style.display = "";
+      document.getElementById("chatInput").value = "";
+
+      addMessage("user", question);
+      const aiIdx = addMessage("ai", '<span class="spinner"></span> 思考中...');
+
+      const btn = document.getElementById("sendBtn");
+      btn.disabled = true;
+      chatting = true;
+
+      try {
+        const params = new URLSearchParams({
+          question,
+          prompt_type: currentPromptType,
+        });
+
+        if (currentSessionId) {
+          params.append("session_id", currentSessionId);
+        }
+        if (bookNames.length > 0) {
+          params.append("book_names", bookNames.join(","));
+        }
+
+        const temp = document.getElementById("chatTemperature").value;
+        const topP = document.getElementById("chatTopP").value;
+        const k = document.getElementById("chatRetrievalK").value;
+        if (temp) params.append("temperature", temp);
+        if (topP) params.append("top_p", topP);
+        if (k) params.append("retrieval_k", k);
+
+        const r = await fetch(`${API}/api/chat/multi`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params,
+        });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "请求失败");
+
+        chatHistory[aiIdx].text = d.response;
+        chatHistory[aiIdx].sources = d.sources || null;
+        chatHistory[aiIdx].retrieved_chunks = d.retrieved_chunks || 0;
+        renderChat();
+        if (currentSessionId) loadSessions();
+      } catch (e) {
+        chatHistory[aiIdx].text = `❌ ${e.message}`;
+        renderChat();
+      } finally {
+        btn.disabled = false;
+        chatting = false;
+      }
+    }
+
+    // ── Chat History — Clear / Export ──
+
+    async function clearHistory() {
+      if (currentSessionId) {
+        if (!confirm("确定要清空当前对话的聊天记录吗？")) return;
+        try {
+          const r = await fetch(`${API}/api/sessions/${currentSessionId}/messages`, { method: "DELETE" });
+          const d = await r.json();
+          if (!d.success) throw new Error(d.detail || "清空失败");
+          chatHistory = [];
+          renderChat();
+          document.getElementById("chatActions").style.display = "none";
+          showAlert("uploadAlert", "✅ 聊天记录已清空", "success");
+          loadSessions();
+        } catch (e) {
+          showAlert("uploadAlert", `❌ ${e.message}`, "error");
+        }
+        return;
+      }
+      if (!currentFile) return;
+      if (!confirm(`确定要清空「${currentFile}」的聊天记录吗？`)) return;
+      try {
+        const r = await fetch(`${API}/api/chat/history/${encodeURIComponent(currentFile)}`, {
+          method: "DELETE",
+        });
+        const d = await r.json();
+        if (!d.success) throw new Error(d.detail || "清空失败");
+        chatHistory = [];
+        renderChat();
+        document.getElementById("chatActions").style.display = "none";
+        showAlert("uploadAlert", "✅ 聊天记录已清空", "success");
+        loadFiles();
+      } catch (e) {
+        showAlert("uploadAlert", `❌ ${e.message}`, "error");
+      }
+    }
+
+    function exportHistory() {
+      if (currentSessionId) {
+        window.open(`${API}/api/sessions/${currentSessionId}/export?format=markdown`, "_blank");
+        return;
+      }
+      if (!currentFile) return;
+      window.open(`${API}/api/chat/history/${encodeURIComponent(currentFile)}/export?format=markdown`, "_blank");
+    }
+
+    // ── Message helpers ──
+
+    function addMessage(role, text) {
+      chatHistory.push({ role, text });
+      renderChat();
+      return chatHistory.length - 1;
+    }
+
+    function renderChat() {
+      const area = document.getElementById("chatArea");
+      if (chatHistory.length === 0) {
+        if (currentFile) {
+          area.innerHTML = `
+        <div class="chat-empty">
+          <div class="chat-empty-icon">💬</div>
+          <h3>已切換到「${currentFile}」</h3>
+          <p>在下方輸入你的問題，AI 將根據檔案內容回答</p>
+        </div>
+      `;
+        } else {
+          area.innerHTML = `
+        <div class="chat-empty">
+          <div class="chat-empty-icon">💬</div>
+          <h3>選擇一個檔案開始提問</h3>
+          <p>從左側清單選擇一個已上傳的檔案，或上傳新檔案</p>
+        </div>
+      `;
+        }
+        return;
+      }
+
+      area.innerHTML = chatHistory.map((m, i) => {
+        const timeStr = m.timestamp
+          ? new Date(m.timestamp * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })
+          : "";
+        const sourcesHtml = m.sources && m.sources.length
+          ? `<button class="sources-toggle" onclick="toggleSources(this)">📎 查看 ${m.sources.length} 个来源</button>
+         <div class="sources-list">${m.sources.map(s => {
+            const bookTag = s.book_name ? `<span style="color:var(--primary);font-weight:500">[${escapeHtml(s.book_name)}]</span> ` : "";
+            return `<div class="source-item">${bookTag}${escapeHtml(s.content_preview || s)}</div>`;
+          }).join("")}</div>`
+          : m.retrieved_chunks
+            ? `<div style="margin-top:6px;font-size:0.72rem;color:var(--muted)">基于 ${m.retrieved_chunks} 个文档片段</div>`
+            : "";
+
+        return `
+      <div class="chat-msg ${m.role}">
+        <div class="chat-avatar">${m.role === "user" ? "👤" : "🤖"}</div>
+        <div class="chat-bubble-wrap">
+          <div class="chat-meta">
+            ${m.role === "user" ? "你" : "AI 助手"}
+            ${timeStr ? `<span class="msg-time">${timeStr}</span>` : ""}
+          </div>
+          <div class="chat-bubble">${m.role === "ai" ? marked.parse(m.text) : escapeHtml(m.text)}${m.role === "ai" && sourcesHtml ? `<br>${sourcesHtml}` : ""}</div>
+        </div>
+      </div>
+    `;
+      }).join("");
+      area.scrollTop = area.scrollHeight;
+    }
+
+    function toggleSources(btn) {
+      const list = btn.nextElementSibling;
+      if (list) list.classList.toggle("show");
+    }
+
+    function parseNum(v) {
+      if (v === "" || v == null) return undefined;
+      const n = parseFloat(v);
+      return isNaN(n) ? undefined : n;
+    }
+
+    function escapeHtml(s) {
+      const div = document.createElement("div");
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    // ── Settings ──
+
+    async function openSettings() {
+      document.getElementById("settingsOverlay").classList.add("show");
+      hideAlert("settingsAlert");
+
+      await loadProviders();
+
+      try {
+        const r = await fetch(`${API}/api/settings`);
+        const d = await r.json();
+        if (d.success) {
+          settings = d.settings || {};
+          const model = settings.model || {};
+          const rag = settings.rag || {};
+          document.getElementById("settingProvider").value = model.provider || "deepseek";
+          document.getElementById("settingModel").value = model.model_name || "";
+          document.getElementById("settingTemperature").value = model.temperature ?? "";
+          document.getElementById("settingTopP").value = model.top_p ?? "";
+
+          const dsModel = document.getElementById("settingDeepseekModel");
+          if (model.model_name === "deepseek-reasoner") dsModel.value = "deepseek-reasoner";
+          else dsModel.value = "deepseek-chat";
+
+          document.getElementById("settingRetrievalK").value = rag.retrieval_k ?? "";
+          document.getElementById("settingKPerBook").value = rag.k_per_book ?? "";
+          document.getElementById("settingSearchType").value = rag.search_type || "similarity";
+          document.getElementById("settingMmrLambda").value = rag.mmr_lambda ?? "";
+          document.getElementById("settingFusionMethod").value = rag.fusion_method || "rrf";
+          onProviderChange();
+          onSearchTypeChange();
+        }
+      } catch (e) {
+        console.error("Failed to load settings", e);
+      }
+    }
+
+    function closeSettings() {
+      document.getElementById("settingsOverlay").classList.remove("show");
+    }
+
+    async function loadProviders() {
+      try {
+        const r = await fetch(`${API}/api/providers`);
+        const d = await r.json();
+        const sel = document.getElementById("settingProvider");
+        if (d.success && d.providers) {
+          const items = Array.isArray(d.providers)
+            ? d.providers
+            : Object.entries(d.providers).map(([id, p]) => ({ id, name: p.label || p.name || id }));
+          sel.innerHTML = items.map(p =>
+            `<option value="${p.id}">${p.name}</option>`
+          ).join("");
+        }
+      } catch (e) {
+        console.error("Failed to load providers", e);
+      }
+    }
+
+    function onProviderChange() {
+      const val = document.getElementById("settingProvider").value;
+      const baseUrlGroup = document.getElementById("settingBaseUrlGroup");
+      baseUrlGroup.style.display = (val === "ollama" || val === "custom") ? "" : "none";
+
+      const deepseekGroup = document.getElementById("settingDeepseekModelGroup");
+      const modelGroup = document.getElementById("settingModelGroup");
+      if (val === "deepseek") {
+        deepseekGroup.style.display = "";
+        modelGroup.style.display = "none";
+      } else {
+        deepseekGroup.style.display = "none";
+        modelGroup.style.display = "";
+      }
+
+      const modelInput = document.getElementById("settingModel");
+      if (val === "deepseek") modelInput.placeholder = "deepseek-chat";
+      else if (val === "openai") modelInput.placeholder = "gpt-4o-mini";
+      else if (val === "groq") modelInput.placeholder = "llama-3.1-70b-versatile";
+      else if (val === "ollama") modelInput.placeholder = "llama3";
+      else modelInput.placeholder = "模型名称";
+    }
+
+    function onSearchTypeChange() {
+      const val = document.getElementById("settingSearchType").value;
+      document.getElementById("settingMmrLambdaGroup").style.display =
+        val === "mmr" ? "" : "none";
+    }
+
+    async function saveSettings() {
+      hideAlert("settingsAlert");
+
+      const provider = document.getElementById("settingProvider").value;
+      let modelName = document.getElementById("settingModel").value || undefined;
+      if (provider === "deepseek") {
+        modelName = document.getElementById("settingDeepseekModel").value;
+      }
+
+      const body = {
+        model: {
+          provider: provider,
+          model_name: modelName,
+          temperature: parseNum(document.getElementById("settingTemperature").value),
+          top_p: parseNum(document.getElementById("settingTopP").value),
+
+        },
+        rag: {
+          retrieval_k: parseInt(document.getElementById("settingRetrievalK").value) || undefined,
+          k_per_book: parseInt(document.getElementById("settingKPerBook").value) || undefined,
+          search_type: document.getElementById("settingSearchType").value || undefined,
+          mmr_lambda: parseNum(document.getElementById("settingMmrLambda").value),
+          fusion_method: document.getElementById("settingFusionMethod").value || undefined,
+        },
+      };
+
+      const baseUrl = document.getElementById("settingBaseUrl").value.trim();
+      if (baseUrl) {
+        body.model.api_base = baseUrl;
+      }
+
+      Object.keys(body.model).forEach(k => { if (body.model[k] === undefined) delete body.model[k]; });
+      Object.keys(body.rag).forEach(k => { if (body.rag[k] === undefined) delete body.rag[k]; });
+
+      try {
+        const r = await fetch(`${API}/api/settings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json();
+        if (!d.success) throw new Error(d.detail || "保存失败");
+        showAlert("settingsAlert", "✅ 设置已保存", "success");
+        setTimeout(closeSettings, 800);
+      } catch (e) {
+        showAlert("settingsAlert", `❌ ${e.message}`, "error");
+      }
+    }
+
+    // ── Overlay click to close ──
+
+    document.getElementById("settingsOverlay").addEventListener("click", (e) => {
+      if (e.target === e.currentTarget) closeSettings();
+    });
+
+    // ── Alert helpers ──
+
+    function showAlert(id, msg, type) {
+      const el = document.getElementById(id);
+      el.className = `alert show alert-${type}`;
+      el.textContent = msg;
+      setTimeout(() => hideAlert(id), 4000);
+    }
+
+    function hideAlert(id) {
+      document.getElementById(id).className = "alert";
+    }
+
+    // ── Init ──
+
+    loadSessions();
+    loadFiles();
+  </script>
+</body>
+
+</html>

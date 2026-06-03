@@ -1,0 +1,28 @@
+langchain==1.2.17
+langchain-community==0.4.1
+langchain-huggingface==1.2.2
+langchain-openai==1.2.1
+langchain-text-splitters==1.1.2
+faiss-cpu==1.13.2
+sentence-transformers==5.4.1
+pypdf==6.10.2
+python-dotenv==1.2.2
+fastapi==0.136.1
+uvicorn==0.46.0
+python-multipart==0.0.27
+openai==2.36.0
+
+# ── Multi-format document support ─────────────────────────────────────────
+# All below are OPTIONAL — document_loader.py falls back gracefully when a
+# library is missing.  Install only the ones you need for your file types.
+#   .docx         → python-docx
+#   .html/.htm    → beautifulsoup4 + lxml
+#   .pptx         → python-pptx
+#   .epub         → ebooklib + beautifulsoup4
+#   .rtf          → striprtf
+python-docx>=1.1.0
+beautifulsoup4>=4.12.0
+lxml>=5.0.0
+python-pptx>=1.0.0
+ebooklib>=0.18
+striprtf>=0.0.20
