@@ -1,3 +1,5 @@
+**English** | [简体中文](README.zh-CN.md)
+
 # 📚 RAG File System
 
 **Chat with your own documents. Upload files, ask questions, get answers with sources.**
